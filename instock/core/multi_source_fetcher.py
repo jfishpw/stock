@@ -25,6 +25,24 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
 ]
 
+EASTMONEY_DOMAINS = [
+    'eastmoney.com',
+    'push2.eastmoney.com',
+    'push2his.eastmoney.com',
+    'datacenter-web.eastmoney.com',
+    'data.eastmoney.com',
+    'quote.eastmoney.com',
+    'emweb.eastmoney.com',
+]
+
+SINA_DOMAINS = [
+    'sina.com.cn',
+    'sinajs.cn',
+    'finance.sina.com.cn',
+    'vip.stock.finance.sina.com.cn',
+    'quotes.sina.cn',
+]
+
 class DataSource:
     EASTMONEY = 'eastmoney'
     SINA = 'sina'
@@ -68,7 +86,7 @@ class MultiSourceFetcher:
         """创建新浪财经会话"""
         session = requests.Session()
         retry_strategy = Retry(
-            total=3,
+            total=2,
             backoff_factor=0.5,
             status_forcelist=[429, 500, 502, 503, 504],
         )
@@ -88,8 +106,8 @@ class MultiSourceFetcher:
         """创建东方财富网会话"""
         session = requests.Session()
         retry_strategy = Retry(
-            total=5,
-            backoff_factor=1,
+            total=2,
+            backoff_factor=0.5,
             status_forcelist=[429, 500, 502, 503, 504],
         )
         adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=50, pool_maxsize=50)
@@ -106,6 +124,24 @@ class MultiSourceFetcher:
             'Sec-Ch-Ua-Platform': '"Windows"',
         })
         return session
+    
+    def _get_url_domain(self, url):
+        """获取URL的域名"""
+        url_lower = url.lower()
+        for domain in EASTMONEY_DOMAINS + SINA_DOMAINS:
+            if domain in url_lower:
+                return domain
+        return None
+    
+    def _is_eastmoney_url(self, url):
+        """检查是否是东方财富的URL"""
+        url_lower = url.lower()
+        return any(domain in url_lower for domain in EASTMONEY_DOMAINS)
+    
+    def _is_sina_url(self, url):
+        """检查是否是新浪的URL"""
+        url_lower = url.lower()
+        return any(domain in url_lower for domain in SINA_DOMAINS)
     
     def _wait_for_rate_limit(self):
         """请求频率控制"""
@@ -156,9 +192,24 @@ class MultiSourceFetcher:
     def make_request(self, url, params=None, source=None, retry=3, timeout=15):
         """
         发送请求，支持多数据源
+        注意：不同数据源的API URL不同，不会自动转换URL
         """
         if source is None:
             source = self.get_available_source()
+        
+        if self._is_eastmoney_url(url) and source == DataSource.SINA:
+            if self._is_source_available(DataSource.EASTMONEY):
+                source = DataSource.EASTMONEY
+            else:
+                logger.warning(f"东方财富API不可用，无法通过新浪数据源访问: {url[:50]}...")
+                raise requests.exceptions.RequestException(f"东方财富数据源不可用")
+        
+        if self._is_sina_url(url) and source == DataSource.EASTMONEY:
+            if self._is_source_available(DataSource.SINA):
+                source = DataSource.SINA
+            else:
+                logger.warning(f"新浪API不可用，无法通过东方财富数据源访问: {url[:50]}...")
+                raise requests.exceptions.RequestException(f"新浪数据源不可用")
         
         self._wait_for_rate_limit()
         
@@ -185,7 +236,7 @@ class MultiSourceFetcher:
                 return response
                 
             except requests.exceptions.ConnectionError as e:
-                logger.warning(f"{source} 连接错误: {e}")
+                logger.warning(f"{source} 连接错误: {str(e)[:100]}")
                 self._update_source_status(source, False)
                 if attempt < retry - 1:
                     time.sleep(random.uniform(1, 3))
@@ -198,17 +249,12 @@ class MultiSourceFetcher:
                     continue
                     
             except requests.exceptions.RequestException as e:
-                logger.warning(f"{source} 请求错误: {e}")
+                logger.warning(f"{source} 请求错误: {str(e)[:100]}")
                 if attempt < retry - 1:
                     time.sleep(random.uniform(1, 2))
                     continue
         
-        other_source = DataSource.EASTMONEY if source == DataSource.SINA else DataSource.SINA
-        if self._is_source_available(other_source):
-            logger.info(f"切换到备用数据源: {other_source}")
-            return self.make_request(url, params, other_source, retry, timeout)
-        
-        raise requests.exceptions.RequestException(f"所有数据源均不可用")
+        raise requests.exceptions.RequestException(f"数据源 {source} 请求失败")
 
 multi_fetcher = MultiSourceFetcher()
 
