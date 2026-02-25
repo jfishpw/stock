@@ -15,7 +15,7 @@ services:
       - instock_network
     restart: always
     healthcheck:
-      test: ["CMD", "mysql", "-u", "root", "-proot", "-e", "SELECT 1"]
+      test: ["CMD", "mariadb", "-u", "root", "-proot", "-e", "SELECT 1"]
       interval: 10s
       timeout: 5s
       retries: 10
