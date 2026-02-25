@@ -63,6 +63,7 @@ class eastmoney_fetcher:
         """
         cookie = os.environ.get('EAST_MONEY_COOKIE')
         if cookie:
+            logger.info(f"从环境变量获取Cookie成功，长度: {len(cookie)}")
             return cookie
 
         cookie_file = Path(os.path.join(self.base_dir, 'config', 'eastmoney_cookie.txt'))
@@ -71,9 +72,14 @@ class eastmoney_fetcher:
                 with open(cookie_file, 'r', encoding='utf-8') as f:
                     cookie = f.read().strip()
                 if cookie:
+                    logger.info(f"从文件获取Cookie成功，长度: {len(cookie)}")
                     return cookie
+                else:
+                    logger.warning("Cookie文件为空")
             except Exception as e:
                 logger.warning(f"读取Cookie文件失败: {e}")
+        else:
+            logger.info("Cookie文件不存在，跳过Cookie配置")
 
         return None
 
@@ -116,8 +122,12 @@ class eastmoney_fetcher:
         cookie_string = self._get_cookie()
         if cookie_string:
             cookies = self._parse_cookie_string(cookie_string)
+            cookie_count = len(cookies)
             for name, value in cookies.items():
                 session.cookies.set(name, value)
+            logger.info(f"已设置 {cookie_count} 个Cookie到会话中")
+        else:
+            logger.info("未配置Cookie，将使用无Cookie模式访问")
         
         return session
 
