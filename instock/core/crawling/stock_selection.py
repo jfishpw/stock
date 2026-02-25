@@ -4,15 +4,16 @@
 import math
 import random
 import time
+import logging
 import pandas as pd
 import instock.core.tablestructure as tbs
-from instock.core.eastmoney_fetcher import eastmoney_fetcher
+from instock.core.multi_source_fetcher import multi_fetcher, DataSource
 
 __author__ = 'myh '
 __date__ = '2025/12/31 '
 
-# 创建全局实例，供所有函数使用
-fetcher = eastmoney_fetcher()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def stock_selection() -> pd.DataFrame:
     """
@@ -24,7 +25,7 @@ def stock_selection() -> pd.DataFrame:
     cols = tbs.TABLE_CN_STOCK_SELECTION['columns']
     page_size = 50
     page_current = 1
-    sty = ""  # 初始值 "SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,CHANGE_RATE"
+    sty = ""
     for k in cols:
         sty = f"{sty},{cols[k]['map']}"
     url = "https://data.eastmoney.com/dataapi/xuangu/list"
@@ -37,40 +38,50 @@ def stock_selection() -> pd.DataFrame:
         "client": "WEB"
     }
 
-    r = fetcher.make_request(url, params=params)
-    data_json = r.json()
-    data = data_json["result"]["data"]
-    if not data:
-        return pd.DataFrame()
-
-    data_count = data_json["result"]["count"]
-    page_count = math.ceil(data_count/page_size)
-    while page_count > 1:
-        # 添加随机延迟，避免爬取过快
-        time.sleep(random.uniform(1, 1.5))
-        page_current = page_current + 1
-        params["p"] = page_current
-        r = fetcher.make_request(url, params=params)
+    try:
+        r = multi_fetcher.make_request(url, params=params, source=DataSource.EASTMONEY)
         data_json = r.json()
-        _data = data_json["result"]["data"]
-        data.extend(_data)
-        page_count =page_count - 1
+        
+        if not data_json.get("result") or not data_json["result"].get("data"):
+            logger.warning("选股数据为空")
+            return pd.DataFrame()
+        
+        data = data_json["result"]["data"]
+        data_count = data_json["result"]["count"]
+        page_count = math.ceil(data_count/page_size)
+        
+        while page_count > 1:
+            time.sleep(random.uniform(0.5, 1))
+            page_current += 1
+            params["p"] = page_current
+            r = multi_fetcher.make_request(url, params=params, source=DataSource.EASTMONEY)
+            data_json = r.json()
+            if data_json.get("result") and data_json["result"].get("data"):
+                data.extend(data_json["result"]["data"])
+            page_count -= 1
 
-    temp_df = pd.DataFrame(data)
+        temp_df = pd.DataFrame(data)
 
-    mask = ~temp_df['CONCEPT'].isna()
-    temp_df.loc[mask, 'CONCEPT'] = temp_df.loc[mask, 'CONCEPT'].apply(lambda x: ', '.join(x))
-    mask = ~temp_df['STYLE'].isna()
-    temp_df.loc[mask, 'STYLE'] = temp_df.loc[mask, 'STYLE'].apply(lambda x: ', '.join(x))
+        if 'CONCEPT' in temp_df.columns:
+            mask = ~temp_df['CONCEPT'].isna()
+            temp_df.loc[mask, 'CONCEPT'] = temp_df.loc[mask, 'CONCEPT'].apply(lambda x: ', '.join(x) if isinstance(x, list) else x)
+        if 'STYLE' in temp_df.columns:
+            mask = ~temp_df['STYLE'].isna()
+            temp_df.loc[mask, 'STYLE'] = temp_df.loc[mask, 'STYLE'].apply(lambda x: ', '.join(x) if isinstance(x, list) else x)
 
-    for k in cols:
-        t = tbs.get_field_type_name(cols[k]["type"])
-        if t == 'numeric':
-            temp_df[cols[k]["map"]] = pd.to_numeric(temp_df[cols[k]["map"]], errors="coerce")
-        elif t == 'datetime':
-            temp_df[cols[k]["map"]] = pd.to_datetime(temp_df[cols[k]["map"]], errors="coerce").dt.date
+        for k in cols:
+            if cols[k]["map"] in temp_df.columns:
+                t = tbs.get_field_type_name(cols[k]["type"])
+                if t == 'numeric':
+                    temp_df[cols[k]["map"]] = pd.to_numeric(temp_df[cols[k]["map"]], errors="coerce")
+                elif t == 'datetime':
+                    temp_df[cols[k]["map"]] = pd.to_datetime(temp_df[cols[k]["map"]], errors="coerce").dt.date
 
-    return temp_df
+        return temp_df
+        
+    except Exception as e:
+        logger.error(f"获取选股数据失败: {e}")
+        return pd.DataFrame()
 
 
 def stock_selection_params():
@@ -90,13 +101,16 @@ def stock_selection_params():
         "client": "WEB"
     }
 
-    r = fetcher.make_request(url, params=params)
-    data_json = r.json()
-    zxzb = data_json["result"]["data"]  # 指标
-    print(zxzb)
+    try:
+        r = multi_fetcher.make_request(url, params=params, source=DataSource.EASTMONEY)
+        data_json = r.json()
+        zxzb = data_json["result"]["data"]
+        print(zxzb)
+    except Exception as e:
+        logger.error(f"获取选股指标失败: {e}")
 
 
 if __name__ == "__main__":
     stock_selection_df = stock_selection()
-    print(stock_selection)
-    # stock_selection_params()
+    print(f"获取到 {len(stock_selection_df)} 条数据")
+    print(stock_selection_df.head())
