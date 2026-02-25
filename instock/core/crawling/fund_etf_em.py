@@ -65,39 +65,57 @@ def _mark_etf_unavailable():
     _last_check_time = time.time()
     logger.warning("ETF数据源暂时不可用，将在5分钟后重试")
 
-def _make_etf_request(url, params, timeout=15):
+def _make_etf_request(url, params, timeout=20, retry=3):
     if not _check_etf_available():
         return None
     
     session = _get_etf_session()
-    session.headers['User-Agent'] = random.choice(USER_AGENTS)
     
-    try:
-        if url.startswith('http://'):
-            url = 'https://' + url[7:]
-        
-        response = session.get(url, params=params, timeout=timeout, verify=True)
-        
-        if response.status_code == 403:
-            logger.warning("ETF请求被拒绝(403)")
+    for attempt in range(retry):
+        try:
+            session.headers['User-Agent'] = random.choice(USER_AGENTS)
+            
+            if url.startswith('http://'):
+                url = 'https://' + url[7:]
+            
+            logger.info(f"ETF请求 [{attempt+1}/{retry}]: {url[:60]}...")
+            response = session.get(url, params=params, timeout=timeout, verify=True)
+            
+            if response.status_code == 403:
+                logger.warning("ETF请求被拒绝(403)")
+                if attempt < retry - 1:
+                    time.sleep(random.uniform(2, 5))
+                    continue
+                _mark_etf_unavailable()
+                return None
+            
+            if response.status_code == 200:
+                return response
+            
+            response.raise_for_status()
+            
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"ETF连接错误 (尝试 {attempt+1}/{retry}): {str(e)[:100]}")
+            if attempt < retry - 1:
+                time.sleep(random.uniform(1, 3))
+                continue
             _mark_etf_unavailable()
             return None
-        
-        response.raise_for_status()
-        return response
-        
-    except requests.exceptions.ConnectionError as e:
-        logger.warning(f"ETF连接错误: {e}")
-        _mark_etf_unavailable()
-        return None
-        
-    except requests.exceptions.Timeout as e:
-        logger.warning(f"ETF请求超时: {e}")
-        return None
-        
-    except requests.exceptions.RequestException as e:
-        logger.warning(f"ETF请求错误: {e}")
-        return None
+            
+        except requests.exceptions.Timeout as e:
+            logger.warning(f"ETF请求超时 (尝试 {attempt+1}/{retry}): {e}")
+            if attempt < retry - 1:
+                time.sleep(random.uniform(1, 2))
+                continue
+            return None
+            
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"ETF请求错误 (尝试 {attempt+1}/{retry}): {str(e)[:100]}")
+            if attempt < retry - 1:
+                time.sleep(random.uniform(1, 2))
+                continue
+    
+    return None
 
 def fund_etf_spot_em() -> pd.DataFrame:
     """
@@ -110,6 +128,7 @@ def fund_etf_spot_em() -> pd.DataFrame:
         logger.info("ETF数据源暂时不可用，跳过获取")
         return pd.DataFrame()
     
+    logger.info("开始获取ETF实时行情数据...")
     url = "https://push2.eastmoney.com/api/qt/clist/get"
     page_size = 50
     page_current = 1
@@ -127,6 +146,7 @@ def fund_etf_spot_em() -> pd.DataFrame:
     
     r = _make_etf_request(url, params)
     if r is None:
+        logger.warning("ETF实时行情请求失败")
         return pd.DataFrame()
     
     try:
@@ -138,6 +158,7 @@ def fund_etf_spot_em() -> pd.DataFrame:
 
         data = data_json["data"]["diff"]
         data_count = data_json["data"]["total"]
+        logger.info(f"ETF数据总量: {data_count}条，开始分页获取...")
         page_count = math.ceil(data_count/page_size)
         
         while page_count > 1:
@@ -150,8 +171,10 @@ def fund_etf_spot_em() -> pd.DataFrame:
             data_json = r.json()
             if data_json.get("data") and data_json["data"].get("diff"):
                 data.extend(data_json["data"]["diff"])
+                logger.info(f"ETF第{page_current}页获取完成，累计{len(data)}条")
             page_count = page_count - 1
 
+        logger.info(f"ETF数据获取完成，共{len(data)}条")
         temp_df = pd.DataFrame(data)
         temp_df.rename(
             columns={

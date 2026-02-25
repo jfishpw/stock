@@ -77,12 +77,41 @@ def fetch_etfs(date):
     try:
         data = fee.fund_etf_spot_em()
         if data is None or len(data.index) == 0:
+            logging.warning("ETF数据获取为空")
             return None
         if date is None:
             data.insert(0, 'date', datetime.datetime.now().strftime("%Y-%m-%d"))
         else:
             data.insert(0, 'date', date.strftime("%Y-%m-%d"))
-        data.columns = list(tbs.TABLE_CN_ETF_SPOT['columns'])
+        
+        etf_column_mapping = {
+            'date': 'date',
+            '代码': 'code',
+            '名称': 'name',
+            '最新价': 'new_price',
+            '涨跌幅': 'change_rate',
+            '涨跌额': 'ups_downs',
+            '成交量': 'volume',
+            '成交额': 'deal_amount',
+            '开盘价': 'open_price',
+            '最高价': 'high_price',
+            '最低价': 'low_price',
+            '昨收': 'pre_close_price',
+            '换手率': 'turnoverrate',
+            '总市值': 'total_market_cap',
+            '流通市值': 'free_cap'
+        }
+        
+        data = data.rename(columns=etf_column_mapping)
+        
+        table_columns = list(tbs.TABLE_CN_ETF_SPOT['columns'])
+        for col in table_columns:
+            if col not in data.columns:
+                if col in ['date', 'code', 'name']:
+                    continue
+                data[col] = None
+        
+        data = data[table_columns]
         data = data.loc[data['new_price'].apply(is_open)]
         return data
     except Exception as e:
