@@ -9,7 +9,11 @@ import os
 import sys
 
 # 添加项目路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.abspath(__file__)
+parent_dir = os.path.dirname(current_dir)
+grandparent_dir = os.path.dirname(parent_dir)
+root_dir = os.path.dirname(grandparent_dir)
+sys.path.insert(0, root_dir)
 
 import instock.lib.database as mdb
 
