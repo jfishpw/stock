@@ -13,13 +13,16 @@ __date__ = '2023/3/10 '
 class BaseHandler(tornado.web.RequestHandler, ABC):
     @property
     def db(self):
+        db_conn = self.application.db
+        if db_conn is None:
+            raise Exception("数据库连接未初始化")
         try:
             # check every time。
-            self.application.db.query("SELECT 1 ")
+            db_conn.query("SELECT 1 ")
         except Exception as e:
-            print(e)
-            self.application.db.reconnect()
-        return self.application.db
+            print(f"数据库连接检查失败，尝试重连: {e}")
+            db_conn.reconnect()
+        return db_conn
 
 
 class LeftMenu:

@@ -48,7 +48,14 @@ class GetStockDataHandler(webBase.BaseHandler, ABC):
     def get(self):
         name = self.get_argument("name", default=None, strip=False)
         date = self.get_argument("date", default=None, strip=False)
-        web_module_data = sswmd.stock_web_module_data().get_data(name)
+        
+        try:
+            web_module_data = sswmd.stock_web_module_data().get_data(name)
+        except KeyError:
+            self.set_status(404)
+            self.write(json.dumps({"error": f"未找到表配置: {name}"}))
+            return
+        
         self.set_header('Content-Type', 'application/json;charset=UTF-8')
 
         where = ""
@@ -67,9 +74,12 @@ class GetStockDataHandler(webBase.BaseHandler, ABC):
 
         sql = f" SELECT *{order_columns} FROM `{web_module_data.table_name}`{where}{order_by}"
         
-        if params:
-            data = self.db.query(sql, *params)
-        else:
-            data = self.db.query(sql)
-
-        self.write(json.dumps(data, cls=MyEncoder))
+        try:
+            if params:
+                data = self.db.query(sql, *params)
+            else:
+                data = self.db.query(sql)
+            self.write(json.dumps(data, cls=MyEncoder))
+        except Exception as e:
+            self.set_status(500)
+            self.write(json.dumps({"error": str(e), "sql": sql}))
