@@ -16,7 +16,6 @@ from instock.core.multi_source_fetcher import multi_fetcher, DataSource
 __author__ = 'myh '
 __date__ = '2025/12/31 '
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def stock_individual_fund_flow_rank(indicator: str = "5日") -> pd.DataFrame:

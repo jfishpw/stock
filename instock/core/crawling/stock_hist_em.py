@@ -16,7 +16,6 @@ from instock.core.multi_source_fetcher import multi_fetcher, sina_data_fetcher, 
 __author__ = 'myh '
 __date__ = '2025/12/31 '
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def stock_zh_a_spot_em() -> pd.DataFrame:
@@ -27,7 +26,10 @@ def stock_zh_a_spot_em() -> pd.DataFrame:
     :rtype: pandas.DataFrame
     """
     try:
-        return _stock_zh_a_spot_sina()
+        logger.info("正在使用新浪财经数据源获取A股实时行情...")
+        result = _stock_zh_a_spot_sina()
+        logger.info(f"新浪财经数据源获取成功，共 {len(result)} 条数据")
+        return result
     except Exception as e:
         logger.warning(f"新浪数据源失败: {e}，尝试东方财富网...")
         try:

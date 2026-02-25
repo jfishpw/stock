@@ -14,7 +14,6 @@ from functools import lru_cache
 __author__ = 'myh '
 __date__ = '2025/12/31 '
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 USER_AGENTS = [
