@@ -392,11 +392,13 @@ def fetch_stock_hist(data_base, date_start=None, is_cache=True):
     try:
         data = stock_hist_cache(code, date_start, None, is_cache, 'qfq')
         if data is not None:
-            # 创建DataFrame的副本以确保可写
-            data = data.copy()
-            data.loc[:, 'p_change'] = tl.ROC(data['close'].values, 1)
-            data['p_change'].values[np.isnan(data['p_change'].values)] = 0.0
-            data["volume"] = data['volume'].values.astype('double') * 100  # 成交量单位从手变成股。
+            # 创建DataFrame的深拷贝以确保完全可写
+            data = data.copy(deep=True)
+            # 重新创建p_change列，避免只读问题
+            p_change = tl.ROC(data['close'].values, 1)
+            p_change[np.isnan(p_change)] = 0.0
+            data['p_change'] = p_change
+            data["volume"] = (data['volume'].astype('double') * 100).values  # 成交量单位从手变成股。
         return data
     except Exception as e:
         logging.error(f"stockfetch.fetch_stock_hist处理异常：{e}")
