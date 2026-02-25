@@ -60,39 +60,37 @@ def _stock_zh_a_spot_sina() -> pd.DataFrame:
     
     temp_df = pd.DataFrame(all_data)
     
-    column_mapping = {
-        'code': '代码',
-        'name': '名称',
-        'trade': '最新价',
-        'pricechange': '涨跌额',
-        'changepercent': '涨跌幅',
-        'buy': '买一',
-        'sell': '卖一',
-        'settlement': '昨收',
-        'open': '今开',
-        'high': '最高',
-        'low': '最低',
-        'volume': '成交量',
-        'amount': '成交额',
-        'ticktime': '时间',
-        'per': '市盈率',
-        'pb': '市净率',
-        'mktcap': '总市值',
-        'nmc': '流通市值',
-        'turnoverratio': '换手率'
+    sina_to_table_mapping = {
+        'code': 'code',
+        'name': 'name',
+        'trade': 'new_price',
+        'pricechange': 'ups_downs',
+        'changepercent': 'change_rate',
+        'settlement': 'pre_close_price',
+        'open': 'open_price',
+        'high': 'high_price',
+        'low': 'low_price',
+        'volume': 'volume',
+        'amount': 'deal_amount',
+        'per': 'pe',
+        'pb': 'pbnewmrq',
+        'mktcap': 'total_market_cap',
+        'nmc': 'free_cap',
+        'turnoverratio': 'turnoverrate'
     }
     
-    temp_df = temp_df.rename(columns=column_mapping)
+    temp_df = temp_df.rename(columns=sina_to_table_mapping)
     
-    numeric_cols = ['最新价', '涨跌额', '涨跌幅', '今开', '最高', '最低', '昨收', 
-                    '成交量', '成交额', '市盈率', '市净率', '总市值', '流通市值', '换手率']
+    numeric_cols = ['new_price', 'ups_downs', 'change_rate', 'pre_close_price', 
+                    'open_price', 'high_price', 'low_price', 'volume', 'deal_amount',
+                    'pe', 'pbnewmrq', 'total_market_cap', 'free_cap', 'turnoverrate']
     for col in numeric_cols:
         if col in temp_df.columns:
             temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
     
-    default_cols = ['代码', '名称', '最新价', '涨跌幅', '涨跌额', '成交量', '成交额', 
-                    '今开', '最高', '最低', '昨收', '换手率', '市盈率', '市净率', 
-                    '总市值', '流通市值']
+    default_cols = ['code', 'name', 'new_price', 'change_rate', 'ups_downs', 'volume', 
+                    'deal_amount', 'open_price', 'high_price', 'low_price', 'pre_close_price', 
+                    'turnoverrate', 'pe', 'pbnewmrq', 'total_market_cap', 'free_cap']
     
     available_cols = [col for col in default_cols if col in temp_df.columns]
     temp_df = temp_df[available_cols]

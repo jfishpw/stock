@@ -100,7 +100,15 @@ def fetch_stocks(date):
             data.insert(0, 'date', datetime.datetime.now().strftime("%Y-%m-%d"))
         else:
             data.insert(0, 'date', date.strftime("%Y-%m-%d"))
-        data.columns = list(tbs.TABLE_CN_STOCK_SPOT['columns'])
+        
+        table_columns = list(tbs.TABLE_CN_STOCK_SPOT['columns'])
+        for col in table_columns:
+            if col not in data.columns:
+                if col in ['date', 'code', 'name']:
+                    continue
+                data[col] = None
+        
+        data = data[table_columns]
         data = data.loc[data['code'].apply(is_a_stock)].loc[data['new_price'].apply(is_open)]
         return data
     except Exception as e:
