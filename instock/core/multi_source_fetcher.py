@@ -218,9 +218,12 @@ class MultiSourceFetcher:
             try:
                 session.headers['User-Agent'] = random.choice(USER_AGENTS)
                 
-                if url.startswith('http://'):
+                if source == DataSource.SINA and self._is_sina_url(url):
+                    pass
+                elif url.startswith('http://'):
                     url = 'https://' + url[7:]
                 
+                logger.info(f"正在请求 [{source}]: {url[:80]}...")
                 response = session.get(url, params=params, timeout=timeout, verify=True)
                 
                 if response.status_code == 403:

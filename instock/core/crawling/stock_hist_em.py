@@ -42,14 +42,15 @@ def _stock_zh_a_spot_sina() -> pd.DataFrame:
     """使用新浪财经获取实时行情"""
     all_data = []
     page = 1
-    page_size = 500
+    page_size = 100
     
     while True:
         data = sina_data_fetcher.get_stock_list(page=page, page_size=page_size)
         if not data:
             break
         all_data.extend(data)
-        if len(data) < page_size:
+        logger.info(f"新浪财经: 第{page}页获取{len(data)}条，累计{len(all_data)}条")
+        if len(data) < 100:
             break
         page += 1
         time.sleep(random.uniform(0.3, 0.6))
@@ -187,14 +188,14 @@ def _code_id_map_sina() -> dict:
     code_id_dict = {}
     all_data = []
     page = 1
-    page_size = 500
+    page_size = 100
     
     while True:
         data = sina_data_fetcher.get_stock_list(page=page, page_size=page_size)
         if not data:
             break
         all_data.extend(data)
-        if len(data) < page_size:
+        if len(data) < 100:
             break
         page += 1
         time.sleep(random.uniform(0.2, 0.4))
