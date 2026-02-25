@@ -1,5 +1,13 @@
 .git
+.github
 .idea
 *.bat
 *.md
-requirements.txt
+img/
+docker/
+__pycache__
+*.pyc
+.cache
+.gitignore
+.venv
+venv
