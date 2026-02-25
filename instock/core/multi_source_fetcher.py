@@ -69,13 +69,13 @@ class MultiSourceFetcher:
         
         self.base_dir = os.path.dirname(os.path.dirname(__file__))
         self._last_request_time = 0
-        self._min_request_interval = 0.8
+        self._min_request_interval = 1.5
         self._current_source = DataSource.AUTO
         self._source_status = {
             DataSource.EASTMONEY: {'available': True, 'last_check': 0, 'fail_count': 0},
             DataSource.SINA: {'available': True, 'last_check': 0, 'fail_count': 0}
         }
-        self._check_interval = 300
+        self._check_interval = 600
         self._max_fail_count = 5
         
         self.sina_session = self._create_sina_session()
@@ -86,18 +86,21 @@ class MultiSourceFetcher:
         session = requests.Session()
         retry_strategy = Retry(
             total=2,
-            backoff_factor=0.5,
+            backoff_factor=1.0,
             status_forcelist=[429, 500, 502, 503, 504],
         )
-        adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=50, pool_maxsize=50)
+        adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         
         session.headers.update({
-            'User-Agent': random.choice(USER_AGENTS),
-            'Referer': 'https://vip.stock.finance.sina.com.cn/',
-            'Accept': '*/*',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://vip.stock.finance.sina.com.cn/q/go.php/vFinanceAnalyze/kind/mainindex/index.phtml',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Cache-Control': 'max-age=0',
         })
         return session
     
@@ -216,7 +219,10 @@ class MultiSourceFetcher:
         
         for attempt in range(retry):
             try:
-                session.headers['User-Agent'] = random.choice(USER_AGENTS)
+                if source == DataSource.SINA:
+                    session.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                else:
+                    session.headers['User-Agent'] = random.choice(USER_AGENTS)
                 
                 if source == DataSource.SINA and self._is_sina_url(url):
                     pass
@@ -230,19 +236,22 @@ class MultiSourceFetcher:
                     logger.warning(f"{source} 请求被拒绝(403)")
                     self._update_source_status(source, False)
                     if attempt < retry - 1:
-                        time.sleep(random.uniform(3, 6))
+                        time.sleep(random.uniform(5, 10))
                         continue
                 
                 if response.status_code == 456:
-                    logger.warning(f"{source} 请求频率过高(456)，等待后重试")
+                    logger.warning(f"{source} 请求频率过高(456)，等待后重试 (尝试 {attempt+1}/{retry})")
+                    self._update_source_status(source, False)
                     if attempt < retry - 1:
-                        time.sleep(random.uniform(5, 10))
+                        wait_time = random.uniform(10, 20) * (attempt + 1)
+                        logger.info(f"等待 {wait_time:.1f} 秒后重试...")
+                        time.sleep(wait_time)
                         continue
                 
                 if response.status_code >= 500:
                     logger.warning(f"{source} 服务器错误({response.status_code})")
                     if attempt < retry - 1:
-                        time.sleep(random.uniform(2, 5))
+                        time.sleep(random.uniform(3, 6))
                         continue
                 
                 response.raise_for_status()
@@ -253,19 +262,19 @@ class MultiSourceFetcher:
                 logger.warning(f"{source} 连接错误: {str(e)[:100]}")
                 self._update_source_status(source, False)
                 if attempt < retry - 1:
-                    time.sleep(random.uniform(3, 6))
+                    time.sleep(random.uniform(5, 10))
                     continue
                     
             except requests.exceptions.Timeout as e:
                 logger.warning(f"{source} 超时: {e}")
                 if attempt < retry - 1:
-                    time.sleep(random.uniform(2, 4))
+                    time.sleep(random.uniform(3, 5))
                     continue
                     
             except requests.exceptions.RequestException as e:
                 logger.warning(f"{source} 请求错误: {str(e)[:100]}")
                 if attempt < retry - 1:
-                    time.sleep(random.uniform(2, 4))
+                    time.sleep(random.uniform(3, 5))
                     continue
         
         raise requests.exceptions.RequestException(f"数据源 {source} 请求失败")
