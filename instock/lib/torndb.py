@@ -99,8 +99,9 @@ class Connection(object):
         self._last_use_time = time.time()
         try:
             self.reconnect()
-        except Exception:
-            logging.error(f"Cannot connect to MySQL on {self.host}", exc_info=True)
+        except Exception as e:
+            logging.error(f"Cannot connect to MySQL on {self.host}: {e}", exc_info=True)
+            raise
 
     def __del__(self):
         self.close()

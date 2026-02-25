@@ -56,7 +56,13 @@ class Application(tornado.web.Application):
         )
         super(Application, self).__init__(handlers, **settings)
         # Have one global connection to the blog DB across all handlers
-        self.db = torndb.Connection(**mdb.MYSQL_CONN_TORNDB)
+        try:
+            self.db = torndb.Connection(**mdb.MYSQL_CONN_TORNDB)
+            print(f"数据库连接成功: {mdb.MYSQL_CONN_TORNDB['host']}/{mdb.MYSQL_CONN_TORNDB['database']}")
+        except Exception as e:
+            logging.error(f"数据库连接失败: {e}")
+            print(f"数据库连接失败: {e}")
+            raise
 
 
 # 首页handler。
