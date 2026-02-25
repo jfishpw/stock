@@ -69,14 +69,14 @@ class MultiSourceFetcher:
         
         self.base_dir = os.path.dirname(os.path.dirname(__file__))
         self._last_request_time = 0
-        self._min_request_interval = 0.3
+        self._min_request_interval = 0.8
         self._current_source = DataSource.AUTO
         self._source_status = {
             DataSource.EASTMONEY: {'available': True, 'last_check': 0, 'fail_count': 0},
             DataSource.SINA: {'available': True, 'last_check': 0, 'fail_count': 0}
         }
         self._check_interval = 300
-        self._max_fail_count = 3
+        self._max_fail_count = 5
         
         self.sina_session = self._create_sina_session()
         self.eastmoney_session = self._create_eastmoney_session()
@@ -230,7 +230,19 @@ class MultiSourceFetcher:
                     logger.warning(f"{source} 请求被拒绝(403)")
                     self._update_source_status(source, False)
                     if attempt < retry - 1:
-                        time.sleep(random.uniform(2, 4))
+                        time.sleep(random.uniform(3, 6))
+                        continue
+                
+                if response.status_code == 456:
+                    logger.warning(f"{source} 请求频率过高(456)，等待后重试")
+                    if attempt < retry - 1:
+                        time.sleep(random.uniform(5, 10))
+                        continue
+                
+                if response.status_code >= 500:
+                    logger.warning(f"{source} 服务器错误({response.status_code})")
+                    if attempt < retry - 1:
+                        time.sleep(random.uniform(2, 5))
                         continue
                 
                 response.raise_for_status()
@@ -241,19 +253,19 @@ class MultiSourceFetcher:
                 logger.warning(f"{source} 连接错误: {str(e)[:100]}")
                 self._update_source_status(source, False)
                 if attempt < retry - 1:
-                    time.sleep(random.uniform(1, 3))
+                    time.sleep(random.uniform(3, 6))
                     continue
                     
             except requests.exceptions.Timeout as e:
                 logger.warning(f"{source} 超时: {e}")
                 if attempt < retry - 1:
-                    time.sleep(random.uniform(1, 2))
+                    time.sleep(random.uniform(2, 4))
                     continue
                     
             except requests.exceptions.RequestException as e:
                 logger.warning(f"{source} 请求错误: {str(e)[:100]}")
                 if attempt < retry - 1:
-                    time.sleep(random.uniform(1, 2))
+                    time.sleep(random.uniform(2, 4))
                     continue
         
         raise requests.exceptions.RequestException(f"数据源 {source} 请求失败")
