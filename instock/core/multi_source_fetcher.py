@@ -69,14 +69,18 @@ class MultiSourceFetcher:
         
         self.base_dir = os.path.dirname(os.path.dirname(__file__))
         self._last_request_time = 0
-        self._min_request_interval = 1.5
+        # 增加请求间隔以避免触发API限制
+        self._min_request_interval = 2.5
         self._current_source = DataSource.AUTO
         self._source_status = {
-            DataSource.EASTMONEY: {'available': True, 'last_check': 0, 'fail_count': 0},
-            DataSource.SINA: {'available': True, 'last_check': 0, 'fail_count': 0}
+            DataSource.EASTMONEY: {'available': True, 'last_check': 0, 'fail_count': 0, 'consecutive_failures': 0},
+            DataSource.SINA: {'available': True, 'last_check': 0, 'fail_count': 0, 'consecutive_failures': 0}
         }
-        self._check_interval = 600
-        self._max_fail_count = 5
+        # 增加检查间隔
+        self._check_interval = 900
+        self._max_fail_count = 3
+        # 连续失败后增加等待时间
+        self._consecutive_failure_penalty = 5
         
         self.sina_session = self._create_sina_session()
         self.eastmoney_session = self._create_eastmoney_session()
@@ -151,9 +155,17 @@ class MultiSourceFetcher:
         time_since_last = current_time - self._last_request_time
         if time_since_last < self._min_request_interval:
             sleep_time = self._min_request_interval - time_since_last
-            sleep_time += random.uniform(0, 0.2)
+            sleep_time += random.uniform(0, 0.5)
             time.sleep(sleep_time)
         self._last_request_time = time.time()
+    
+    def _wait_for_consecutive_failure(self, source):
+        """根据连续失败次数增加等待时间"""
+        status = self._source_status[source]
+        if status.get('consecutive_failures', 0) > 0:
+            wait_time = self._consecutive_failure_penalty * status['consecutive_failures']
+            logger.info(f"数据源 {source} 连续失败{status['consecutive_failures']}次，等待{wait_time}秒...")
+            time.sleep(wait_time)
     
     def _update_source_status(self, source, success):
         """更新数据源状态"""
@@ -161,11 +173,13 @@ class MultiSourceFetcher:
         if success:
             status['fail_count'] = 0
             status['available'] = True
+            status['consecutive_failures'] = 0
         else:
             status['fail_count'] += 1
+            status['consecutive_failures'] = status.get('consecutive_failures', 0) + 1
             if status['fail_count'] >= self._max_fail_count:
                 status['available'] = False
-                logger.warning(f"数据源 {source} 已标记为不可用")
+                logger.warning(f"数据源 {source} 已标记为不可用 (连续失败{status['consecutive_failures']}次)")
         status['last_check'] = time.time()
     
     def _is_source_available(self, source):
@@ -191,10 +205,15 @@ class MultiSourceFetcher:
         
         return DataSource.SINA
     
-    def make_request(self, url, params=None, source=None, retry=3, timeout=15):
+    def make_request(self, url, params=None, source=None, retry=5, timeout=20):
         """
         发送请求，支持多数据源
         注意：不同数据源的API URL不同，不会自动转换URL
+        
+        优化策略：
+        - 增加重试次数
+        - 使用指数退避算法
+        - 456错误使用更长的等待时间
         """
         if source is None:
             source = self.get_available_source()
@@ -214,6 +233,7 @@ class MultiSourceFetcher:
                 raise requests.exceptions.RequestException(f"新浪数据源不可用")
         
         self._wait_for_rate_limit()
+        self._wait_for_consecutive_failure(source)
         
         session = self.sina_session if source == DataSource.SINA else self.eastmoney_session
         
@@ -236,22 +256,27 @@ class MultiSourceFetcher:
                     logger.warning(f"{source} 请求被拒绝(403)")
                     self._update_source_status(source, False)
                     if attempt < retry - 1:
-                        time.sleep(random.uniform(5, 10))
+                        wait_time = (2 ** attempt) + random.uniform(5, 15)
+                        logger.info(f"等待 {wait_time:.1f} 秒后重试...")
+                        time.sleep(wait_time)
                         continue
                 
                 if response.status_code == 456:
-                    logger.warning(f"{source} 请求频率过高(456)，等待后重试 (尝试 {attempt+1}/{retry})")
+                    logger.warning(f"{source} 请求频率过高(456)，尝试 {attempt+1}/{retry}")
                     self._update_source_status(source, False)
                     if attempt < retry - 1:
-                        wait_time = random.uniform(10, 20) * (attempt + 1)
-                        logger.info(f"等待 {wait_time:.1f} 秒后重试...")
+                        # 使用指数退避，每次重试等待时间翻倍
+                        wait_time = (2 ** attempt) * 15 + random.uniform(10, 30)
+                        logger.info(f"指数退避：等待 {wait_time:.1f} 秒后重试...")
                         time.sleep(wait_time)
                         continue
                 
                 if response.status_code >= 500:
                     logger.warning(f"{source} 服务器错误({response.status_code})")
+                    self._update_source_status(source, False)
                     if attempt < retry - 1:
-                        time.sleep(random.uniform(3, 6))
+                        wait_time = (2 ** attempt) + random.uniform(3, 8)
+                        time.sleep(wait_time)
                         continue
                 
                 response.raise_for_status()
@@ -262,19 +287,24 @@ class MultiSourceFetcher:
                 logger.warning(f"{source} 连接错误: {str(e)[:100]}")
                 self._update_source_status(source, False)
                 if attempt < retry - 1:
-                    time.sleep(random.uniform(5, 10))
+                    wait_time = (2 ** attempt) + random.uniform(5, 10)
+                    time.sleep(wait_time)
                     continue
                     
             except requests.exceptions.Timeout as e:
                 logger.warning(f"{source} 超时: {e}")
+                self._update_source_status(source, False)
                 if attempt < retry - 1:
-                    time.sleep(random.uniform(3, 5))
+                    wait_time = (2 ** attempt) + random.uniform(3, 8)
+                    time.sleep(wait_time)
                     continue
                     
             except requests.exceptions.RequestException as e:
                 logger.warning(f"{source} 请求错误: {str(e)[:100]}")
+                self._update_source_status(source, False)
                 if attempt < retry - 1:
-                    time.sleep(random.uniform(3, 5))
+                    wait_time = (2 ** attempt) + random.uniform(3, 8)
+                    time.sleep(wait_time)
                     continue
         
         raise requests.exceptions.RequestException(f"数据源 {source} 请求失败")
