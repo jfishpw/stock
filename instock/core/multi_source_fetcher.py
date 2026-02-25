@@ -297,8 +297,47 @@ class sina_data_fetcher:
             "symbol": "",
             "_s_r_a": "page"
         }
-        r = multi_fetcher.make_request(url, params=params, source=DataSource.SINA)
-        return r.json()
+        try:
+            r = multi_fetcher.make_request(url, params=params, source=DataSource.SINA)
+            return r.json()
+        except Exception as e:
+            logger.warning(f"获取股票列表失败: {e}")
+            # 尝试使用东方财富网作为备选
+            try:
+                url_em = "https://push2.eastmoney.com/api/qt/clist/get"
+                params_em = {
+                    "pn": page,
+                    "pz": page_size,
+                    "po": 1,
+                    "np": 1,
+                    "fltt": 2,
+                    "invt": 2,
+                    "fid": "f12",
+                    "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
+                    "fields": "f12,f14,f15,f16,f17,f18,f20,f21,f22,f23,f24,f25,f26"
+                }
+                r = multi_fetcher.make_request(url_em, params=params_em, source=DataSource.EASTMONEY)
+                data = r.json()
+                if data.get('data') and data['data'].get('diff'):
+                    # 转换东方财富网数据格式为新浪格式
+                    result = []
+                    for item in data['data']['diff']:
+                        symbol = item.get('f12')
+                        if symbol.startswith('6'):
+                            symbol_prefix = 'sh'
+                        elif symbol.startswith('0') or symbol.startswith('3'):
+                            symbol_prefix = 'sz'
+                        else:
+                            symbol_prefix = 'sh'
+                        result.append({
+                            'code': item.get('f12'),
+                            'name': item.get('f14'),
+                            'symbol': f"{symbol_prefix}{item.get('f12')}"
+                        })
+                    return result
+            except Exception as e2:
+                logger.warning(f"东方财富网获取股票列表也失败: {e2}")
+            return []
     
     @staticmethod
     def get_stock_realtime(codes):

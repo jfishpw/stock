@@ -189,14 +189,21 @@ def _code_id_map_sina() -> dict:
     page_size = 100
     
     while True:
-        data = sina_data_fetcher.get_stock_list(page=page, page_size=page_size)
-        if not data:
+        try:
+            data = sina_data_fetcher.get_stock_list(page=page, page_size=page_size)
+            if not data:
+                break
+            all_data.extend(data)
+            if len(data) < 100:
+                break
+            page += 1
+            # 增加睡眠时间，避免触发新浪API的频率限制
+            import time
+            import random
+            time.sleep(random.uniform(1.5, 2.5))
+        except Exception as e:
+            logger.warning(f"获取股票列表失败: {e}")
             break
-        all_data.extend(data)
-        if len(data) < 100:
-            break
-        page += 1
-        time.sleep(random.uniform(0.2, 0.4))
     
     for item in all_data:
         code = item.get('code', '')
