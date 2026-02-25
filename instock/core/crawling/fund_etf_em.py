@@ -11,13 +11,94 @@ from functools import lru_cache
 import math
 import logging
 import pandas as pd
-from instock.core.multi_source_fetcher import multi_fetcher, DataSource
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 __author__ = 'myh '
 __date__ = '2025/12/31 '
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+]
+
+_etf_session = None
+_etf_available = True
+_last_check_time = 0
+
+def _get_etf_session():
+    global _etf_session
+    if _etf_session is None:
+        _etf_session = requests.Session()
+        retry_strategy = Retry(
+            total=2,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=50, pool_maxsize=50)
+        _etf_session.mount("http://", adapter)
+        _etf_session.mount("https://", adapter)
+        _etf_session.headers.update({
+            'User-Agent': random.choice(USER_AGENTS),
+            'Referer': 'https://quote.eastmoney.com/',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+        })
+    return _etf_session
+
+def _check_etf_available():
+    global _etf_available, _last_check_time
+    import time as t
+    current_time = t.time()
+    if current_time - _last_check_time > 300:
+        _etf_available = True
+        _last_check_time = current_time
+    return _etf_available
+
+def _mark_etf_unavailable():
+    global _etf_available, _last_check_time
+    _etf_available = False
+    _last_check_time = time.time()
+    logger.warning("ETF数据源暂时不可用，将在5分钟后重试")
+
+def _make_etf_request(url, params, timeout=15):
+    if not _check_etf_available():
+        return None
+    
+    session = _get_etf_session()
+    session.headers['User-Agent'] = random.choice(USER_AGENTS)
+    
+    try:
+        if url.startswith('http://'):
+            url = 'https://' + url[7:]
+        
+        response = session.get(url, params=params, timeout=timeout, verify=True)
+        
+        if response.status_code == 403:
+            logger.warning("ETF请求被拒绝(403)")
+            _mark_etf_unavailable()
+            return None
+        
+        response.raise_for_status()
+        return response
+        
+    except requests.exceptions.ConnectionError as e:
+        logger.warning(f"ETF连接错误: {e}")
+        _mark_etf_unavailable()
+        return None
+        
+    except requests.exceptions.Timeout as e:
+        logger.warning(f"ETF请求超时: {e}")
+        return None
+        
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"ETF请求错误: {e}")
+        return None
 
 def fund_etf_spot_em() -> pd.DataFrame:
     """
@@ -26,6 +107,10 @@ def fund_etf_spot_em() -> pd.DataFrame:
     :return: ETF 实时行情
     :rtype: pandas.DataFrame
     """
+    if not _check_etf_available():
+        logger.info("ETF数据源暂时不可用，跳过获取")
+        return pd.DataFrame()
+    
     url = "https://push2.eastmoney.com/api/qt/clist/get"
     page_size = 50
     page_current = 1
@@ -41,8 +126,11 @@ def fund_etf_spot_em() -> pd.DataFrame:
         "fields": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f62,f128,f136,f115,f152",
     }
     
+    r = _make_etf_request(url, params)
+    if r is None:
+        return pd.DataFrame()
+    
     try:
-        r = multi_fetcher.make_request(url, params=params, source=DataSource.EASTMONEY)
         data_json = r.json()
 
         if not data_json.get("data") or not data_json["data"].get("diff"):
@@ -57,7 +145,9 @@ def fund_etf_spot_em() -> pd.DataFrame:
             time.sleep(random.uniform(0.5, 1))
             page_current = page_current + 1
             params["pn"] = page_current
-            r = multi_fetcher.make_request(url, params=params, source=DataSource.EASTMONEY)
+            r = _make_etf_request(url, params)
+            if r is None:
+                break
             data_json = r.json()
             if data_json.get("data") and data_json["data"].get("diff"):
                 data.extend(data_json["data"]["diff"])
@@ -116,7 +206,8 @@ def fund_etf_spot_em() -> pd.DataFrame:
         return temp_df
         
     except Exception as e:
-        logger.error(f"获取ETF实时行情失败: {e}")
+        logger.error(f"解析ETF实时行情失败: {e}")
+        _mark_etf_unavailable()
         return pd.DataFrame()
 
 
@@ -128,6 +219,9 @@ def _fund_etf_code_id_map_em() -> dict:
     :return: ETF 代码和市场标识映射
     :rtype: pandas.DataFrame
     """
+    if not _check_etf_available():
+        return {}
+    
     url = "https://push2.eastmoney.com/api/qt/clist/get"
     params = {
         "pn": "1",
@@ -141,8 +235,11 @@ def _fund_etf_code_id_map_em() -> dict:
         "fields": "f12,f13",
     }
     
+    r = _make_etf_request(url, params)
+    if r is None:
+        return {}
+    
     try:
-        r = multi_fetcher.make_request(url, params=params, source=DataSource.EASTMONEY)
         data_json = r.json()
         if data_json.get("data") and data_json["data"].get("diff"):
             temp_df = pd.DataFrame(data_json["data"]["diff"])
@@ -177,6 +274,9 @@ def fund_etf_hist_em(
     :return: 每日行情
     :rtype: pandas.DataFrame
     """
+    if not _check_etf_available():
+        return pd.DataFrame()
+    
     code_id_dict = _fund_etf_code_id_map_em()
     if symbol not in code_id_dict:
         logger.warning(f"ETF代码 {symbol} 不存在")
@@ -195,8 +295,11 @@ def fund_etf_hist_em(
         "end": end_date,
     }
     
+    r = _make_etf_request(url, params)
+    if r is None:
+        return pd.DataFrame()
+    
     try:
-        r = multi_fetcher.make_request(url, params=params, source=DataSource.EASTMONEY)
         data_json = r.json()
         if not (data_json.get("data") and data_json["data"].get("klines")):
             return pd.DataFrame()
@@ -230,7 +333,7 @@ def fund_etf_hist_em(
         return temp_df
         
     except Exception as e:
-        logger.error(f"获取ETF历史行情失败: {e}")
+        logger.error(f"解析ETF历史行情失败: {e}")
         return pd.DataFrame()
 
 
@@ -257,6 +360,9 @@ def fund_etf_hist_min_em(
     :return: 每日分时行情
     :rtype: pandas.DataFrame
     """
+    if not _check_etf_available():
+        return pd.DataFrame()
+    
     code_id_dict = _fund_etf_code_id_map_em()
     if symbol not in code_id_dict:
         logger.warning(f"ETF代码 {symbol} 不存在")
@@ -278,7 +384,10 @@ def fund_etf_hist_min_em(
                 "iscr": "0",
                 "secid": f"{code_id_dict[symbol]}.{symbol}",
             }
-            r = multi_fetcher.make_request(url, params=params, source=DataSource.EASTMONEY)
+            r = _make_etf_request(url, params)
+            if r is None:
+                return pd.DataFrame()
+                
             data_json = r.json()
             
             if not data_json.get("data") or not data_json["data"].get("trends"):
@@ -320,7 +429,10 @@ def fund_etf_hist_min_em(
                 "beg": "0",
                 "end": "20500000",
             }
-            r = multi_fetcher.make_request(url, params=params, source=DataSource.EASTMONEY)
+            r = _make_etf_request(url, params)
+            if r is None:
+                return pd.DataFrame()
+                
             data_json = r.json()
             
             if not data_json.get("data") or not data_json["data"].get("klines"):
@@ -374,7 +486,7 @@ def fund_etf_hist_min_em(
             return temp_df
             
     except Exception as e:
-        logger.error(f"获取ETF分时行情失败: {e}")
+        logger.error(f"解析ETF分时行情失败: {e}")
         return pd.DataFrame()
 
 
