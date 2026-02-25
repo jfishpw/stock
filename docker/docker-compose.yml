@@ -6,12 +6,19 @@ services:
     container_name: InStockDbService
     environment:
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: stock_data
+      MYSQL_DATABASE: instockdb
+      MYSQL_USER: stock
+      MYSQL_PASSWORD: stock123
     volumes:
       - instock_db_data:/var/lib/mysql
     networks:
       - instock_network
     restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   instock:
     build:
@@ -23,10 +30,15 @@ services:
       - "9988:9988"
     environment:
       db_host: InStockDbService
+      db_user: root
+      db_password: root
+      db_database: instockdb
+      db_port: 3306
     volumes:
       - ./proxy.txt:/data/InStock/instock/config/proxy.txt
     depends_on:
-      - instockdbservice
+      instockdbservice:
+        condition: service_healthy
     networks:
       - instock_network
     restart: always
