@@ -45,7 +45,9 @@ class stock_hist_data(metaclass=singleton_type):
                     try:
                         __data = future.result()
                         if __data is not None:
-                            _data[stock] = __data
+                            # 使用(date, code)作为key，保留与股票列表一致的格式
+                            stock_key = (stock[0], stock[1])
+                            _data[stock_key] = __data
                     except Exception as e:
                         logging.error(f"singleton.stock_hist_data处理异常：{stock[1]}代码{e}")
         except Exception as e:
