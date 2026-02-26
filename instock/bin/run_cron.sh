@@ -19,5 +19,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
 chmod 600 /var/spool/cron/crontabs/root
 
-# 启动cron服务。在前台
-/usr/sbin/cron -f
+# 启动cron服务（后台运行）
+/usr/sbin/cron
+
+# 保持脚本运行
+tail -f /dev/null
