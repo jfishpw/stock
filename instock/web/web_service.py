@@ -11,6 +11,7 @@ import tornado.httpserver
 import tornado.ioloop
 import tornado.options
 from tornado import gen
+import hashlib
 
 # 在项目运行时，临时将项目路径添加到环境变量
 cpath_current = os.path.dirname(os.path.dirname(__file__))
@@ -27,14 +28,36 @@ import instock.lib.version as version
 import instock.web.dataTableHandler as dataTableHandler
 import instock.web.dataIndicatorsHandler as dataIndicatorsHandler
 import instock.web.base as webBase
+import instock.web.auth_handler as auth_handler
 
 __author__ = 'myh '
 __date__ = '2023/3/10 '
 
 
+def check_auth(handler):
+    """检查是否已认证"""
+    from instock.lib.web_password import is_password_set, verify_password
+    
+    # 如果没有设置密码，允许访问
+    if not is_password_set():
+        return True
+    
+    # 检查cookie中的认证信息
+    auth_cookie = handler.get_cookie('web_auth')
+    if auth_cookie:
+        expected = hashlib.sha256('authenticated'.encode()).hexdigest()[:16]
+        if auth_cookie == expected:
+            return True
+    
+    return False
+
+
 class Application(tornado.web.Application):
     def __init__(self):
         handlers = [
+            # 登录相关
+            (r"/instock/api/login", auth_handler.LoginHandler),
+            (r"/instock/login", auth_handler.LoginHandler),
             # 设置路由
             (r"/", HomeHandler),
             (r"/instock/", HomeHandler),
@@ -69,6 +92,12 @@ class Application(tornado.web.Application):
 class HomeHandler(webBase.BaseHandler, ABC):
     @gen.coroutine
     def get(self):
+        # 检查是否需要认证
+        if not check_auth(self):
+            # 未认证，重定向到登录页面
+            self.redirect("/instock/login")
+            return
+        
         self.render("index.html",
                     stockVersion=version.__version__,
                     leftMenu=webBase.GetLeftMenu(self.request.uri))
