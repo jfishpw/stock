@@ -24,9 +24,10 @@ class LoginHandler(tornado.web.RequestHandler):
     
     @gen.coroutine
     def get(self):
-        """渲染登录页面"""
+        """返回是否需要设置密码"""
         from instock.lib.web_password import is_password_set
-        self.render("login.html", need_login=not is_password_set())
+        self.set_header('Content-Type', 'application/json')
+        self.write({'need_login': not is_password_set()})
     
     @gen.coroutine
     def post(self):

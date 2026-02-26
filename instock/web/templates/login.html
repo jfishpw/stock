@@ -53,11 +53,11 @@
 </head>
 <body>
     <div class="login-container">
-        <h1 id="title">请设置登录密码</h1>
+        <h1 id="title">加载中...</h1>
         <form id="loginForm">
             <div class="form-group" id="passwordGroup">
-                <label for="password" id="passwordLabel">设置密码</label>
-                <input type="password" id="password" placeholder="请输入密码（至少4位）" required>
+                <label for="password" id="passwordLabel">密码</label>
+                <input type="password" id="password" placeholder="请输入密码" required>
             </div>
             <div class="form-group" id="confirmGroup" style="display: none;">
                 <label for="confirmPassword">确认密码</label>
@@ -70,20 +70,49 @@
     </div>
 
     <script>
+        var isSettingPassword = false;
+        
         function showMessage(text, type) {
             var msg = document.getElementById('message');
             msg.textContent = text;
             msg.className = 'message ' + type;
         }
+        
+        function updateUI(needSetPassword) {
+            isSettingPassword = needSetPassword;
+            if (needSetPassword) {
+                document.getElementById('title').textContent = '请设置登录密码';
+                document.getElementById('passwordLabel').textContent = '设置密码';
+                document.getElementById('password').placeholder = '请输入密码（至少4位）';
+                document.getElementById('confirmGroup').style.display = 'block';
+                document.getElementById('submitBtn').textContent = '设置密码';
+            } else {
+                document.getElementById('title').textContent = '请输入密码登录';
+                document.getElementById('passwordLabel').textContent = '登录密码';
+                document.getElementById('password').placeholder = '请输入密码';
+                document.getElementById('confirmGroup').style.display = 'none';
+                document.getElementById('submitBtn').textContent = '登录';
+            }
+        }
+        
+        // 页面加载时检查是否需要设置密码
+        fetch('/instock/api/login')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                updateUI(data.need_login);
+            })
+            .catch(function() {
+                showMessage('连接服务器失败', 'error');
+            });
 
         document.getElementById('loginForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
             var password = document.getElementById('password').value;
             var confirmPassword = document.getElementById('confirmPassword').value;
-            var isSetting = document.getElementById('confirmGroup').style.display !== 'none';
             
-            if (isSetting) {
+            if (isSettingPassword) {
+                // 设置密码
                 if (password.length < 4) {
                     showMessage('密码长度至少4位', 'error');
                     return;
@@ -108,6 +137,7 @@
                     }
                 });
             } else {
+                // 登录
                 fetch('/instock/api/login', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
