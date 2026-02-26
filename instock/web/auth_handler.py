@@ -7,6 +7,7 @@
 import tornado.web
 import tornado.escape
 from tornado import gen
+import hashlib
 
 class LoginHandler(tornado.web.RequestHandler):
     """处理登录请求"""
@@ -29,6 +30,11 @@ class LoginHandler(tornado.web.RequestHandler):
         self.set_header('Content-Type', 'application/json')
         self.write({'need_login': not is_password_set()})
     
+    def set_auth_cookie(self):
+        """设置认证cookie"""
+        auth_value = hashlib.sha256('authenticated'.encode()).hexdigest()[:16]
+        self.set_cookie('web_auth', auth_value, expires_days=7)
+    
     @gen.coroutine
     def post(self):
         """处理登录请求"""
@@ -47,6 +53,8 @@ class LoginHandler(tornado.web.RequestHandler):
                     return
                 
                 if set_password(password):
+                    # 设置密码成功后自动登录
+                    self.set_auth_cookie()
                     self.write({'success': True, 'message': '密码设置成功'})
                 else:
                     self.write({'success': False, 'message': '密码设置失败'})
@@ -59,6 +67,8 @@ class LoginHandler(tornado.web.RequestHandler):
                 
                 password = data.get('password', '')
                 if verify_password(password):
+                    # 登录成功后设置cookie
+                    self.set_auth_cookie()
                     self.write({'success': True, 'message': '登录成功'})
                 else:
                     self.write({'success': False, 'message': '密码错误'})
