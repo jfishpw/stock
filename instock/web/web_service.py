@@ -55,9 +55,10 @@ def check_auth(handler):
 class Application(tornado.web.Application):
     def __init__(self):
         handlers = [
-            # 登录相关
+            # 登录页面（渲染HTML）
+            (r"/instock/login", LoginPageHandler),
+            # 登录API（返回JSON）
             (r"/instock/api/login", auth_handler.LoginHandler),
-            (r"/instock/login", auth_handler.LoginHandler),
             # 设置路由
             (r"/", HomeHandler),
             (r"/instock/", HomeHandler),
@@ -86,6 +87,13 @@ class Application(tornado.web.Application):
             logging.error(f"数据库连接失败: {e}")
             print(f"数据库连接失败: {e}")
             raise
+
+
+# 登录页面handler
+class LoginPageHandler(tornado.web.RequestHandler, ABC):
+    @gen.coroutine
+    def get(self):
+        self.render("login.html")
 
 
 # 首页handler。
