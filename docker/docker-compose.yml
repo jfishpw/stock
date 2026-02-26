@@ -37,6 +37,7 @@ services:
       db_port: 3306
     volumes:
       - ./proxy.txt:/data/InStock/instock/config/proxy.txt
+      - ./config:/data/InStock/instock/config
     depends_on:
       instockdbservice:
         condition: service_healthy
