@@ -23,8 +23,11 @@ def check(code_name, data, date=None, threshold=30):
     if len(data.index) < threshold:
         return False
 
-    data.loc[:, 'ma30'] = tl.MA(data['close'].values, timeperiod=30)
-    data['ma30'].values[np.isnan(data['ma30'].values)] = 0.0
+    # 计算MA30，避免只读问题
+    ma30 = tl.MA(data['close'].values, timeperiod=30)
+    ma30 = np.nan_to_num(ma30, nan=0.0)
+    data = data.copy()
+    data['ma30'] = ma30
 
     data = data.tail(n=threshold)
 

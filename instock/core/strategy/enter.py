@@ -28,8 +28,11 @@ def check_volume(code_name, data, date=None, threshold=60):
     if p_change < 2 or data.iloc[-1]['close'] < data.iloc[-1]['open']:
         return False
 
-    data.loc[:, 'vol_ma5'] = tl.MA(data['volume'].values, timeperiod=5)
-    data['vol_ma5'].values[np.isnan(data['vol_ma5'].values)] = 0.0
+    # 计算5日成交量均线，避免只读问题
+    vol_ma5 = tl.MA(data['volume'].values, timeperiod=5)
+    vol_ma5 = np.nan_to_num(vol_ma5, nan=0.0)
+    data = data.copy()
+    data['vol_ma5'] = vol_ma5
 
     data = data.tail(n=threshold + 1)
     if len(data) < threshold + 1:

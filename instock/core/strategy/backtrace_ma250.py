@@ -26,8 +26,11 @@ def check(code_name, data, date=None, threshold=60):
     if len(data.index) < 250:
         return False
 
-    data.loc[:, 'ma250'] = tl.MA(data['close'].values, timeperiod=250)
-    data['ma250'].values[np.isnan(data['ma250'].values)] = 0.0
+    # 计算MA250，避免只读问题
+    ma250 = tl.MA(data['close'].values, timeperiod=250)
+    ma250 = np.nan_to_num(ma250, nan=0.0)
+    data = data.copy()
+    data['ma250'] = ma250
 
     data = data.tail(n=threshold)
 
