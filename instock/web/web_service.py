@@ -38,9 +38,9 @@ def check_auth(handler):
     """检查是否已认证"""
     from instock.lib.web_password import is_password_set, verify_password
     
-    # 如果没有设置密码，允许访问
+    # 如果没有设置密码，跳转到设置密码页面
     if not is_password_set():
-        return True
+        return False
     
     # 检查cookie中的认证信息
     auth_cookie = handler.get_cookie('web_auth')
