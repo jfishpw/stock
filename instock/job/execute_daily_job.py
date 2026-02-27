@@ -46,7 +46,7 @@ def main():
         # 第3.1步创建股票其它基础数据表
         executor.submit(hdtj.main)
         # 第3.2步创建股票指标数据表
-        # executor.submit(gdj.main)
+        executor.submit(gdj.main)
         # 第4步创建股票k线形态表
         # executor.submit(kdj.main)
         # 第5步创建股票策略数据表
